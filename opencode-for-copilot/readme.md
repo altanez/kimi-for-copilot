@@ -27,13 +27,13 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 3. Перезагрузи VS Code: `Ctrl+Shift+P` → `Developer: Reload Window`
 
-## Модели (40)
+## Модели (39)
 
 ### Claude (9) — через `/zen/v1/chat/completions`
 `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-opus-4-1`, `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-sonnet-4`, `claude-haiku-4-5`
 
-### GPT (17) — через `/zen/v1/responses`
-`gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex-spark`, `gpt-5.3-codex`, `gpt-5.2`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5`, `gpt-5-codex`, `gpt-5-nano`
+### GPT (16) — через `/zen/v1/responses`
+`gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex`, `gpt-5.2`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5`, `gpt-5-codex`, `gpt-5-nano`
 
 ### DeepSeek (2)
 `deepseek-v4-flash`, `deepseek-v4-flash-free` (бесплатно)
@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ### Qwen (2)
 `qwen3.6-plus`, `qwen3.5-plus`
 
-### Бесплатные (2)
+### Бесплатные (3)
 `big-pickle`, `mimo-v2.5-free`, `nemotron-3-super-free`
 
 ## Для пользователей из России
