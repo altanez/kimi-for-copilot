@@ -9,20 +9,45 @@ const CONFIG_SECTION = 'opencode-copilot';
 const ZEN_HOST = 'opencode.ai';
 const ZEN_PATH = '/zen/v1/chat/completions';
 
-// --- Models from OpenCode Zen (OpenAI-compatible endpoint) ---
+// --- Models from OpenCode Zen (tested via /zen/v1/chat/completions) ---
+// GPT models excluded (need /zen/v1/responses endpoint)
+// Gemini models excluded (need different auth/endpoint)
 const MODELS = [
-    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', detail: 'Fast, free', maxInput: 131072, maxOutput: 8192 },
+    // Claude
+    { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', detail: 'Anthropic flagship', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', detail: 'Anthropic', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', detail: 'Anthropic', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-opus-4-5', name: 'Claude Opus 4.5', detail: 'Anthropic', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-opus-4-1', name: 'Claude Opus 4.1', detail: 'Anthropic', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', detail: 'Balanced speed/power', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', detail: 'Balanced', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', detail: 'Balanced', maxInput: 200000, maxOutput: 8192 },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', detail: 'Fast & cheap', maxInput: 200000, maxOutput: 8192 },
+    // DeepSeek
+    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', detail: 'Fast coding model', maxInput: 131072, maxOutput: 8192 },
     { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192 },
-    { id: 'kimi-k2.6', name: 'Kimi K2.6', detail: 'Latest Kimi model', maxInput: 131072, maxOutput: 8192 },
-    { id: 'kimi-k2.5', name: 'Kimi K2.5', detail: 'Kimi reasoning model', maxInput: 131072, maxOutput: 8192 },
+    // Kimi
+    { id: 'kimi-k2.6', name: 'Kimi K2.6', detail: 'Latest Kimi', maxInput: 131072, maxOutput: 8192 },
+    { id: 'kimi-k2.5', name: 'Kimi K2.5', detail: 'Kimi reasoning', maxInput: 131072, maxOutput: 8192 },
+    // MiniMax
     { id: 'minimax-m2.7', name: 'MiniMax M2.7', detail: 'Cost-effective', maxInput: 131072, maxOutput: 8192 },
+    { id: 'minimax-m2.5', name: 'MiniMax M2.5', detail: 'Cost-effective', maxInput: 131072, maxOutput: 8192 },
+    { id: 'minimax-m3-free', name: 'MiniMax M3 Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192 },
+    // GLM
     { id: 'glm-5.1', name: 'GLM 5.1', detail: 'Zhipu AI latest', maxInput: 131072, maxOutput: 8192 },
+    { id: 'glm-5', name: 'GLM 5', detail: 'Zhipu AI', maxInput: 131072, maxOutput: 8192 },
+    // Grok
     { id: 'grok-build-0.1', name: 'Grok Build 0.1', detail: 'xAI coding model', maxInput: 131072, maxOutput: 8192 },
+    // Qwen
+    { id: 'qwen3.6-plus', name: 'Qwen 3.6 Plus', detail: 'Alibaba', maxInput: 131072, maxOutput: 8192 },
+    { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', detail: 'Alibaba', maxInput: 131072, maxOutput: 8192 },
+    { id: 'qwen3.6-plus-free', name: 'Qwen 3.6 Plus Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192 },
+    // Free / stealth
     { id: 'big-pickle', name: 'Big Pickle', detail: 'Free stealth model', maxInput: 131072, maxOutput: 8192 },
     { id: 'mimo-v2.5-free', name: 'MiMo V2.5 Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192 },
     { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra Free', detail: 'NVIDIA free', maxInput: 131072, maxOutput: 8192 },
-    { id: 'qwen3.7-max', name: 'Qwen 3.7 Max', detail: 'Alibaba flagship', maxInput: 131072, maxOutput: 8192 },
-    { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus', detail: 'Fast & capable', maxInput: 131072, maxOutput: 8192 },
+    { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super Free', detail: 'NVIDIA free', maxInput: 131072, maxOutput: 8192 },
+];
 ];
 
 function getApiKey() {
