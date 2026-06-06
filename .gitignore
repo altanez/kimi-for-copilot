@@ -1,0 +1,11 @@
+# VS Code
+.vscode/
+*.vsix
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python (если остались тестовые файлы)
+__pycache__/
+*.pyc
