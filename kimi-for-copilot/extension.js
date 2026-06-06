@@ -250,38 +250,48 @@ function kimiConnect(apiKey, body, signal) {
                 // Use Buffer for header parsing to avoid UTF-8 corruption at chunk boundaries
                 const headerChunks = [];
                 let headerDone = false;
-                tlsSocket.on('data', (chunk) => {
-                    if (!headerDone) {
-                        headerChunks.push(chunk);
-                        const buf = Buffer.concat(headerChunks);
-                        const headerEnd = buf.indexOf('\r\n\r\n');
-                        if (headerEnd >= 0) {
-                            headerDone = true;
-                            const code = parseInt(buf.toString('ascii', 0, buf.indexOf('\r\n')).split(' ')[1]);
-                            // Check if response uses chunked transfer encoding
-                            const headerStr = buf.toString('ascii', 0, headerEnd);
-                            const isChunked = /transfer-encoding:\s*chunked/i.test(headerStr);
-                            // Extract remaining body bytes after headers (as Buffer, NOT string)
-                            const bodyStart = headerEnd + 4;
-                            const remaining = buf.length > bodyStart ? buf.slice(bodyStart) : null;
-                            const fakeStream = new (require('stream').PassThrough)();
-                            if (remaining && remaining.length > 0) fakeStream.write(remaining);
-                            if (isChunked) {
-                                const chunkedDecoder = createChunkedDecoder();
-                                tlsSocket.pipe(chunkedDecoder).pipe(fakeStream);
-                            } else {
-                                tlsSocket.pipe(fakeStream);
-                            }
+                const onHeaderData = (chunk) => {
+                    if (headerDone) return;
+                    headerChunks.push(chunk);
+                    const buf = Buffer.concat(headerChunks);
+                    const headerEnd = buf.indexOf('\r\n\r\n');
+                    if (headerEnd < 0) return;
 
-                            resolve({
-                                ok: code >= 200 && code < 300,
-                                status: code,
-                                body: parseSSEFromNode(fakeStream),
-                                text: () => Promise.resolve(remaining ? remaining.toString('utf-8') : ''),
-                            });
-                        }
+                    headerDone = true;
+                    // CRITICAL: stop receiving data via this listener BEFORE piping,
+                    // otherwise body bytes get split between this handler and the pipe
+                    // (Node still calls every 'data' listener, but our handler ignores
+                    // them once headerDone is true → data is silently dropped).
+                    tlsSocket.removeListener('data', onHeaderData);
+
+                    const code = parseInt(buf.toString('ascii', 0, buf.indexOf('\r\n')).split(' ')[1]);
+                    // Check if response uses chunked transfer encoding
+                    const headerStr = buf.toString('ascii', 0, headerEnd);
+                    const isChunked = /transfer-encoding:\s*chunked/i.test(headerStr);
+                    // Extract remaining body bytes after headers (as Buffer, NOT string)
+                    const bodyStart = headerEnd + 4;
+                    const remaining = buf.length > bodyStart ? buf.slice(bodyStart) : null;
+                    const fakeStream = new (require('stream').PassThrough)();
+                    if (isChunked) {
+                        const chunkedDecoder = createChunkedDecoder();
+                        // The remaining bytes are still chunk-encoded, so they MUST go
+                        // through the decoder, not directly into fakeStream.
+                        if (remaining && remaining.length > 0) chunkedDecoder.write(remaining);
+                        chunkedDecoder.pipe(fakeStream);
+                        tlsSocket.pipe(chunkedDecoder);
+                    } else {
+                        if (remaining && remaining.length > 0) fakeStream.write(remaining);
+                        tlsSocket.pipe(fakeStream);
                     }
-                });
+
+                    resolve({
+                        ok: code >= 200 && code < 300,
+                        status: code,
+                        body: parseSSEFromNode(fakeStream),
+                        text: () => Promise.resolve(remaining ? remaining.toString('utf-8') : ''),
+                    });
+                };
+                tlsSocket.on('data', onHeaderData);
                 tlsSocket.on('error', reject);
             } else {
                 // Direct HTTPS request
