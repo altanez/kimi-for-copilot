@@ -118,7 +118,7 @@ function buildRequestBody(model, messages, options) {
     const modelId = model.id.startsWith('opencode/') ? model.id.slice(9) : model.id;
     const body = { model: modelId, messages: openaiMessages, stream: true, stream_options: { include_usage: true } };
     if (options.tools?.length > 0) {
-        body.tools = options.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+        body.tools = options.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters || { type: 'object', properties: {} } } }));
         body.tool_choice = 'auto';
     }
     return body;
