@@ -1,12 +1,15 @@
 # OpenCode Zen for Copilot
 
-Добавляет 40 моделей из подписки OpenCode Zen в выпадающий список GitHub Copilot Chat.
+Добавляет 39 моделей из подписки OpenCode Zen в выпадающий список GitHub Copilot Chat.
 
 ## Быстрая установка
 
 ```powershell
+# Из папки opencode-for-copilot:
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+Скрипт автоматически создаст .vsix-пакет и установит расширение через VS Code. Если `vsce` не найден — выполнит ручную установку копированием файлов. Также запросит API-ключ и проверит подключение.
 
 ## Ручная установка
 
