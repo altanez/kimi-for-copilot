@@ -58,11 +58,9 @@ const MODELS = [
     // Qwen (chat)
     { id: 'qwen3.6-plus', name: 'Qwen 3.6 Plus', detail: 'Alibaba', maxInput: 131072, maxOutput: 8192, api: 'chat' },
     { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', detail: 'Alibaba', maxInput: 131072, maxOutput: 8192, api: 'chat' },
-    { id: 'qwen3.6-plus-free', name: 'Qwen 3.6 Plus Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192, api: 'chat' },
     // Free/stealth (chat)
     { id: 'big-pickle', name: 'Big Pickle', detail: 'Free stealth', maxInput: 131072, maxOutput: 8192, api: 'chat' },
     { id: 'mimo-v2.5-free', name: 'MiMo V2.5 Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192, api: 'chat' },
-    { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra Free', detail: 'NVIDIA free', maxInput: 131072, maxOutput: 8192, api: 'chat' },
     { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super Free', detail: 'NVIDIA free', maxInput: 131072, maxOutput: 8192, api: 'chat' },
 ];
 
