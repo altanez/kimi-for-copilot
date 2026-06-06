@@ -2,7 +2,6 @@
   "name": "kimi-for-copilot",
   "displayName": "Kimi for Copilot Chat",
   "description": "Pick Kimi models from the Copilot Chat model picker via local proxy",
-  "icon": "icon.png",
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",

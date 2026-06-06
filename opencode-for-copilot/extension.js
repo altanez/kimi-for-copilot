@@ -221,6 +221,36 @@ function parseSSEFromNode(readable, apiType) {
     });
 }
 
+// --- Chunked transfer encoding decoder (for proxy path) ---
+function createChunkedDecoder() {
+    const { Transform } = require('stream');
+    let buf = Buffer.alloc(0);
+    return new Transform({
+        transform(chunk, _encoding, callback) {
+            buf = Buffer.concat([buf, chunk]);
+            while (buf.length > 0) {
+                const rnIdx = buf.indexOf('\r\n');
+                if (rnIdx === -1) break;
+                const sizeStr = buf.toString('ascii', 0, rnIdx);
+                const semiIdx = sizeStr.indexOf(';');
+                const chunkSize = parseInt(semiIdx >= 0 ? sizeStr.slice(0, semiIdx) : sizeStr, 16);
+                if (isNaN(chunkSize)) { callback(new Error('Bad chunk size: ' + sizeStr)); return; }
+                if (chunkSize === 0) { buf = Buffer.alloc(0); break; }
+                const dataStart = rnIdx + 2;
+                const dataEnd = dataStart + chunkSize;
+                if (buf.length < dataEnd + 2) break;
+                this.push(buf.slice(dataStart, dataEnd));
+                buf = buf.slice(dataEnd + 2);
+            }
+            callback();
+        },
+        flush(callback) {
+            if (buf.length > 0) this.push(buf);
+            callback();
+        },
+    });
+}
+
 function zenFetch(apiKey, body, path, signal, apiType) {
     const proxy = getSystemProxy();
     const reqBody = JSON.stringify(body);
@@ -249,12 +279,20 @@ function zenFetch(apiKey, body, path, signal, apiType) {
                         if (headerEnd >= 0) {
                             headerDone = true;
                             const code = parseInt(buf.toString('ascii', 0, buf.indexOf('\r\n')).split(' ')[1]);
+                            // Check if response uses chunked transfer encoding
+                            const headerStr = buf.toString('ascii', 0, headerEnd);
+                            const isChunked = /transfer-encoding:\s*chunked/i.test(headerStr);
                             // Extract remaining body bytes after headers (as Buffer, NOT string)
                             const bodyStart = headerEnd + 4;
                             const remaining = buf.length > bodyStart ? buf.slice(bodyStart) : null;
                             const fakeStream = new (require('stream').PassThrough)();
                             if (remaining && remaining.length > 0) fakeStream.write(remaining);
-                            tlsSocket.pipe(fakeStream);
+                            if (isChunked) {
+                                const chunkedDecoder = createChunkedDecoder();
+                                tlsSocket.pipe(chunkedDecoder).pipe(fakeStream);
+                            } else {
+                                tlsSocket.pipe(fakeStream);
+                            }
                             resolve({ ok: code >= 200 && code < 300, status: code, body: parseSSEFromNode(fakeStream, apiType), text: () => Promise.resolve(remaining ? remaining.toString('utf-8') : '') });
                         }
                     }
