@@ -22,7 +22,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
    ```json
    {
-     "kimi-copilot.apiKey": "sk-kimi-YOUR-KEY-HERE"
+     "kimi-copilot.apiKey": "sk-kimi-твой-ключ-сюда"
    }
    ```
 
