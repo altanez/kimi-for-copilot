@@ -11,7 +11,7 @@
   },
   "categories": ["AI", "Chat"],
   "keywords": ["kimi", "moonshot", "copilot", "chat"],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": ["*"],
   "main": "./extension.js",
   "contributes": {
     "languageModelChatProviders": [

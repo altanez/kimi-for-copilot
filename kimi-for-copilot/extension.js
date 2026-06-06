@@ -114,7 +114,7 @@ function buildRequestBody(model, messages, options) {
         }
 
         if (role === 'assistant' && toolCalls.length > 0) {
-            openaiMessages.push({ role: 'assistant', content: textContent || '', tool_calls: toolCalls });
+            openaiMessages.push({ role: 'assistant', content: textContent || '', tool_calls: toolCalls, reasoning_content: '' });
         } else if (textContent) {
             openaiMessages.push({ role, content: textContent });
         }
@@ -189,6 +189,7 @@ function parseSSEFromNode(readable) {
 function kimiConnect(apiKey, body, signal) {
     const proxy = getSystemProxy();
     const reqBody = JSON.stringify(body);
+    const reqBodyBuffer = Buffer.from(reqBody, 'utf-8');
 
     return new Promise((resolve, reject) => {
         function makeRequest(socket) {
@@ -207,39 +208,42 @@ function kimiConnect(apiKey, body, signal) {
                     'Content-Type: application/json',
                     `Authorization: Bearer ${apiKey}`,
                     'User-Agent: claude-code/0.1.0',
-                    `Content-Length: ${Buffer.byteLength(reqBody)}`,
+                    `Content-Length: ${reqBodyBuffer.length}`,
                     'Connection: close',
                     '', '',
                 ].join('\r\n');
 
-                tlsSocket.write(headers + reqBody);
+                tlsSocket.write(headers);
+                tlsSocket.write(reqBodyBuffer);
                 if (signal) signal.addEventListener('abort', () => tlsSocket.destroy());
 
-                // Wait for response headers to determine ok/status
-                let headerBuf = '';
-                const onData = (chunk) => {
-                    headerBuf += chunk.toString();
-                    const headerEnd = headerBuf.indexOf('\r\n\r\n');
-                    if (headerEnd >= 0) {
-                        const statusLine = headerBuf.substring(0, headerBuf.indexOf('\r\n'));
-                        const code = parseInt(statusLine.split(' ')[1]);
-                        // Remove the onData handler so raw stream starts fresh
-                        tlsSocket.removeListener('data', onData);
-                        // Re-emit remaining data
-                        const remaining = headerBuf.substring(headerEnd + 4);
-                        const fakeStream = new (require('stream').PassThrough)();
-                        if (remaining) fakeStream.write(remaining);
-                        tlsSocket.pipe(fakeStream);
+                // Use Buffer for header parsing to avoid UTF-8 corruption at chunk boundaries
+                const headerChunks = [];
+                let headerDone = false;
+                tlsSocket.on('data', (chunk) => {
+                    if (!headerDone) {
+                        headerChunks.push(chunk);
+                        const buf = Buffer.concat(headerChunks);
+                        const headerEnd = buf.indexOf('\r\n\r\n');
+                        if (headerEnd >= 0) {
+                            headerDone = true;
+                            const code = parseInt(buf.toString('ascii', 0, buf.indexOf('\r\n')).split(' ')[1]);
+                            // Extract remaining body bytes after headers (as Buffer, NOT string)
+                            const bodyStart = headerEnd + 4;
+                            const remaining = buf.length > bodyStart ? buf.slice(bodyStart) : null;
+                            const fakeStream = new (require('stream').PassThrough)();
+                            if (remaining && remaining.length > 0) fakeStream.write(remaining);
+                            tlsSocket.pipe(fakeStream);
 
-                        resolve({
-                            ok: code >= 200 && code < 300,
-                            status: code,
-                            body: parseSSEFromNode(fakeStream),
-                            text: () => Promise.resolve(headerBuf.substring(headerEnd + 4)),
-                        });
+                            resolve({
+                                ok: code >= 200 && code < 300,
+                                status: code,
+                                body: parseSSEFromNode(fakeStream),
+                                text: () => Promise.resolve(remaining ? remaining.toString('utf-8') : ''),
+                            });
+                        }
                     }
-                };
-                tlsSocket.on('data', onData);
+                });
                 tlsSocket.on('error', reject);
             } else {
                 // Direct HTTPS request
@@ -251,7 +255,7 @@ function kimiConnect(apiKey, body, signal) {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`,
                         'User-Agent': 'claude-code/0.1.0',
-                        'Content-Length': Buffer.byteLength(reqBody),
+                        'Content-Length': reqBodyBuffer.length,
                     },
                     rejectUnauthorized: false,
                 }, (res) => {
@@ -269,7 +273,7 @@ function kimiConnect(apiKey, body, signal) {
                 });
 
                 req.on('error', reject);
-                req.write(reqBody);
+                req.write(reqBodyBuffer);
                 req.end();
                 if (signal) signal.addEventListener('abort', () => req.destroy());
             }

@@ -85,7 +85,7 @@ function getSystemProxy() {
 
 function toChatInfo(m) {
     return {
-        id: `opencode/${m.id}`, name: m.name, family: 'opencode',
+        id: m.id, name: m.name, family: 'opencode',
         version: m.id, detail: m.detail,
         maxInputTokens: m.maxInput, maxOutputTokens: m.maxOutput,
         isUserSelectable: true,
@@ -112,19 +112,19 @@ function buildRequestBody(model, messages, options) {
         if (role === 'assistant' && toolCalls.length > 0) openaiMessages.push({ role: 'assistant', content: textContent || '', tool_calls: toolCalls });
         else if (textContent) openaiMessages.push({ role, content: textContent });
     }
-    // Strip opencode/ prefix from model id
-    const modelId = model.id.startsWith('opencode/') ? model.id.slice(9) : model.id;
+        const modelId = model.id;
     const body = { model: modelId, messages: openaiMessages, stream: true, stream_options: { include_usage: true } };
     if (options.tools?.length > 0) {
         body.tools = options.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters || { type: 'object', properties: {} } } }));
         body.tool_choice = 'auto';
     }
+    console.log('[opencode-buildRequestBody]', JSON.stringify(body));
     return body;
 }
 
 // --- Build Responses API body for GPT models ---
 function buildResponsesBody(model, messages, options) {
-    const modelId = model.id.startsWith('opencode/') ? model.id.slice(9) : model.id;
+    const modelId = model.id;
     let instructions = '';
     const inputParts = [];
     for (const msg of messages) {
@@ -138,6 +138,7 @@ function buildResponsesBody(model, messages, options) {
     }
     const body = { model: modelId, input: inputParts.join('\n\n'), stream: true };
     if (instructions) body.instructions = instructions;
+    console.log('[opencode-buildResponsesBody]', JSON.stringify(body));
     return body;
 }
 
@@ -161,20 +162,25 @@ function parseSSEFromNode(readable, apiType) {
 
     return new ReadableStream({
         start(controller) {
+            let closed = false;
+            function closeOnce() {
+                if (!closed) { closed = true; controller.close(); }
+            }
             readable.on('data', (chunk) => {
                 buffer += decoder.decode(chunk, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
                 for (const line of lines) {
                     const trimmed = line.trim();
+                    console.log('[opencode-raw-sse]', trimmed);
                     if (!trimmed) { currentEvent = ''; continue; }
                     if (trimmed.startsWith('event: ')) { currentEvent = trimmed.slice(7); continue; }
 
                     // Chat completions: "data: [DONE]" or "data:[DONE]"
-                    if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') { controller.close(); return; }
+                    if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') { closeOnce(); return; }
 
                     // Responses API: "data: [DONE]" via different format
-                    if (trimmed === '[DONE]') { controller.close(); return; }
+                    if (trimmed === '[DONE]') { closeOnce(); return; }
 
                     const dataPrefix = trimmed.startsWith('data: ') ? 'data: ' : (trimmed.startsWith('data:') ? 'data:' : null);
                     if (!dataPrefix) continue;
@@ -191,7 +197,7 @@ function parseSSEFromNode(readable, apiType) {
                                 controller.enqueue({ reasoning: obj.delta || obj.summary?.[0]?.text || '' });
                             } else if (type === 'response.completed' || type === 'response.failed') {
                                 controller.enqueue({ finishReason: type === 'response.completed' ? 'stop' : 'error' });
-                                controller.close();
+                                closeOnce();
                             }
                             // Ignore other events (response.created, etc.)
                         } else {
@@ -202,14 +208,15 @@ function parseSSEFromNode(readable, apiType) {
                             const result = {};
                             if (delta?.content) result.content = delta.content;
                             if (delta?.reasoning_content) result.reasoning = delta.reasoning_content;
+                            if (delta?.tool_calls) result.toolCalls = delta.tool_calls;
                             if (choices[0].finish_reason) result.finishReason = choices[0].finish_reason;
                             if (Object.keys(result).length > 0) controller.enqueue(result);
                         }
                     } catch { /* skip malformed JSON */ }
                 }
             });
-            readable.on('end', () => controller.close());
-            readable.on('error', (e) => controller.error(e));
+            readable.on('end', () => closeOnce());
+            readable.on('error', (e) => { if (!closed) { closed = true; controller.error(e); } });
         },
     });
 }
@@ -217,6 +224,8 @@ function parseSSEFromNode(readable, apiType) {
 function zenFetch(apiKey, body, path, signal, apiType) {
     const proxy = getSystemProxy();
     const reqBody = JSON.stringify(body);
+    console.log('[opencode-request]', path, reqBody);
+    const reqBodyBuffer = Buffer.from(reqBody, 'utf-8');
     return new Promise((resolve, reject) => {
         function makeRequest(socket) {
             if (socket) {
@@ -224,30 +233,37 @@ function zenFetch(apiKey, body, path, signal, apiType) {
                 const headers = [
                     `POST ${path} HTTP/1.1`, `Host: ${ZEN_HOST}`, 'Content-Type: application/json',
                     `Authorization: Bearer ${apiKey}`, 'User-Agent: claude-code/0.1.0',
-                    `Content-Length: ${Buffer.byteLength(reqBody)}`, 'Connection: close', '', '',
+                    `Content-Length: ${reqBodyBuffer.length}`, 'Connection: close', '', '',
                 ].join('\r\n');
-                tlsSocket.write(headers + reqBody);
+                tlsSocket.write(headers);
+                tlsSocket.write(reqBodyBuffer);
                 if (signal) signal.addEventListener('abort', () => tlsSocket.destroy());
-                let headerBuf = '';
-                const onData = (chunk) => {
-                    headerBuf += chunk.toString();
-                    const headerEnd = headerBuf.indexOf('\r\n\r\n');
-                    if (headerEnd >= 0) {
-                        const code = parseInt(headerBuf.substring(0, headerBuf.indexOf('\r\n')).split(' ')[1]);
-                        tlsSocket.removeListener('data', onData);
-                        const remaining = headerBuf.substring(headerEnd + 4);
-                        const fakeStream = new (require('stream').PassThrough)();
-                        if (remaining) fakeStream.write(remaining);
-                        tlsSocket.pipe(fakeStream);
-                        resolve({ ok: code >= 200 && code < 300, status: code, body: parseSSEFromNode(fakeStream, apiType), text: () => Promise.resolve(headerBuf.substring(headerEnd + 4)) });
+                // Use Buffer for header parsing to avoid UTF-8 corruption at chunk boundaries
+                const headerChunks = [];
+                let headerDone = false;
+                tlsSocket.on('data', (chunk) => {
+                    if (!headerDone) {
+                        headerChunks.push(chunk);
+                        const buf = Buffer.concat(headerChunks);
+                        const headerEnd = buf.indexOf('\r\n\r\n');
+                        if (headerEnd >= 0) {
+                            headerDone = true;
+                            const code = parseInt(buf.toString('ascii', 0, buf.indexOf('\r\n')).split(' ')[1]);
+                            // Extract remaining body bytes after headers (as Buffer, NOT string)
+                            const bodyStart = headerEnd + 4;
+                            const remaining = buf.length > bodyStart ? buf.slice(bodyStart) : null;
+                            const fakeStream = new (require('stream').PassThrough)();
+                            if (remaining && remaining.length > 0) fakeStream.write(remaining);
+                            tlsSocket.pipe(fakeStream);
+                            resolve({ ok: code >= 200 && code < 300, status: code, body: parseSSEFromNode(fakeStream, apiType), text: () => Promise.resolve(remaining ? remaining.toString('utf-8') : '') });
+                        }
                     }
-                };
-                tlsSocket.on('data', onData);
+                });
                 tlsSocket.on('error', reject);
             } else {
                 const req = https.request({
                     hostname: ZEN_HOST, path: path, method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'claude-code/0.1.0', 'Content-Length': Buffer.byteLength(reqBody) },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'claude-code/0.1.0', 'Content-Length': reqBodyBuffer.length },
                     rejectUnauthorized: false,
                 }, (res) => {
                     resolve({
@@ -255,7 +271,7 @@ function zenFetch(apiKey, body, path, signal, apiType) {
                         text: () => new Promise((r, rej) => { let d = ''; res.on('data', c => d += c.toString()); res.on('end', () => r(d)); res.on('error', rej); }),
                     });
                 });
-                req.on('error', reject); req.write(reqBody); req.end();
+                req.on('error', reject); req.write(reqBodyBuffer); req.end();
                 if (signal) signal.addEventListener('abort', () => req.destroy());
             }
         }
@@ -290,7 +306,7 @@ class OpenCodeChatProvider {
         if (!apiKey) throw new Error('OpenCode Zen API key not set. Configure opencode-copilot.apiKey in VS Code settings.');
         
         // Find model definition to determine API type
-        const modelId = model.id.startsWith('opencode/') ? model.id.slice(9) : model.id;
+        const modelId = model.id;
         const modelDef = MODELS.find(m => m.id === modelId);
         const apiType = modelDef?.api || 'chat';
         const path = apiType === 'responses' ? ZEN_RESPONSES_PATH : ZEN_CHAT_PATH;
@@ -309,7 +325,8 @@ class OpenCodeChatProvider {
             while (true) {
                 if (token.isCancellationRequested) return;
                 const { done, value: chunk } = await reader.read();
-                if (done) break;
+                console.log('[opencode-chunk]', JSON.stringify(chunk));
+if (done) break;
                 
                 if (chunk.content) progress.report(new vscode.LanguageModelTextPart(chunk.content));
                 if (chunk.reasoning) progress.report(new vscode.LanguageModelTextPart(chunk.reasoning));
@@ -317,7 +334,16 @@ class OpenCodeChatProvider {
                 // Handle tool calls from chat completions format
                 if (chunk.toolCalls) {
                     for (const tc of chunk.toolCalls) {
-                        // Chat completions tool call accumulation
+                        let pending = pendingToolCalls.get(tc.index);
+                        if (!pending) {
+                            pending = { id: tc.id || '', name: '', arguments: '' };
+                            pendingToolCalls.set(tc.index, pending);
+                        }
+                        if (tc.id) pending.id = tc.id;
+                        if (tc.function) {
+                            if (tc.function.name) pending.name += tc.function.name;
+                            if (tc.function.arguments) pending.arguments += tc.function.arguments;
+                        }
                     }
                 }
                 if (chunk.finishReason) {
