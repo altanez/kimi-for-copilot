@@ -63,6 +63,32 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 Расширение автоматически идёт через системный прокси (Hiddify, VPN) через HTTP CONNECT туннель.
 
+## Usage и кредиты
+
+В расширение добавлен локальный просмотр usage:
+
+1. `Ctrl+Shift+P` → `OpenCode Zen: Show Usage Stats`
+2. Или клик по статус-бару `OpenCode: ... tok`
+
+Что доступно сейчас:
+
+- суммарные токены по всем запросам
+- input/output/reasoning tokens
+- последний запрос
+- статистика по моделям
+- команда `OpenCode Zen: Open Usage Dashboard` для перехода в кабинет OpenCode по `workspaceId`
+
+Ограничение:
+
+- `remaining credits` сейчас не показывается, потому что в проекте нет подтверждённого публичного endpoint OpenCode Zen для billing/balance
+- если найдётся рабочий endpoint личного кабинета, его можно будет прикрутить в это же расширение отдельной командой или отдельным view
+
+Для открытия dashboard укажи `opencode-copilot.workspaceId`, например из URL вида:
+
+```text
+https://opencode.ai/workspace/wrk_XXXXXXXXXXXXXXXXXXXXXXXXXX/usage
+```
+
 ## Устранение неполадок
 
 | Ошибка | Решение |
