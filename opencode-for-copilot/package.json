@@ -1,0 +1,28 @@
+{
+  "name": "opencode-for-copilot",
+  "displayName": "OpenCode Zen for Copilot Chat",
+  "description": "Add OpenCode Zen models to Copilot Chat model picker",
+  "version": "1.0.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": { "vscode": "^1.96.0" },
+  "categories": ["AI", "Chat"],
+  "keywords": ["opencode", "zen", "copilot", "chat"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "languageModelChatProviders": [
+      { "vendor": "opencode", "displayName": "OpenCode Zen" }
+    ],
+    "configuration": {
+      "title": "OpenCode Zen",
+      "properties": {
+        "opencode-copilot.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenCode Zen API key (from opencode.ai/auth)"
+        }
+      }
+    }
+  }
+}

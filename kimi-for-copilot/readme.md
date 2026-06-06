@@ -18,10 +18,15 @@ powershell -ExecutionPolicy Bypass -File install.ps1
    %USERPROFILE%\.vscode\extensions\local.kimi-for-copilot\
    ```
 
-2. В VS Code `settings.json` добавь:
+2. В VS Code `settings.json` (`Ctrl+Shift+P` → `Preferences: Open User Settings (JSON)`) добавь:
+
    ```json
-   "kimi-copilot.apiKey": "sk-kimi-твой-ключ"
+   {
+     "kimi-copilot.apiKey": "sk-kimi-YOUR-KEY-HERE"
+   }
    ```
+
+   > Ключ можно получить в личном кабинете Kimi → API Keys.
 
 3. Перезагрузи VS Code: `Ctrl+Shift+P` → `Developer: Reload Window`
 

@@ -1,0 +1,246 @@
+const vscode = require('vscode');
+const https = require('https');
+const http = require('http');
+const tls = require('tls');
+const net = require('net');
+const { ReadableStream } = require('stream/web');
+
+const CONFIG_SECTION = 'opencode-copilot';
+const ZEN_HOST = 'opencode.ai';
+const ZEN_PATH = '/zen/v1/chat/completions';
+
+// --- Models from OpenCode Zen (OpenAI-compatible endpoint) ---
+const MODELS = [
+    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', detail: 'Fast, free', maxInput: 131072, maxOutput: 8192 },
+    { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192 },
+    { id: 'kimi-k2.6', name: 'Kimi K2.6', detail: 'Latest Kimi model', maxInput: 131072, maxOutput: 8192 },
+    { id: 'kimi-k2.5', name: 'Kimi K2.5', detail: 'Kimi reasoning model', maxInput: 131072, maxOutput: 8192 },
+    { id: 'minimax-m2.7', name: 'MiniMax M2.7', detail: 'Cost-effective', maxInput: 131072, maxOutput: 8192 },
+    { id: 'glm-5.1', name: 'GLM 5.1', detail: 'Zhipu AI latest', maxInput: 131072, maxOutput: 8192 },
+    { id: 'grok-build-0.1', name: 'Grok Build 0.1', detail: 'xAI coding model', maxInput: 131072, maxOutput: 8192 },
+    { id: 'big-pickle', name: 'Big Pickle', detail: 'Free stealth model', maxInput: 131072, maxOutput: 8192 },
+    { id: 'mimo-v2.5-free', name: 'MiMo V2.5 Free', detail: 'Free tier', maxInput: 131072, maxOutput: 8192 },
+    { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra Free', detail: 'NVIDIA free', maxInput: 131072, maxOutput: 8192 },
+    { id: 'qwen3.7-max', name: 'Qwen 3.7 Max', detail: 'Alibaba flagship', maxInput: 131072, maxOutput: 8192 },
+    { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus', detail: 'Fast & capable', maxInput: 131072, maxOutput: 8192 },
+];
+
+function getApiKey() {
+    return vscode.workspace.getConfiguration(CONFIG_SECTION).get('apiKey') || '';
+}
+
+function getSystemProxy() {
+    try {
+        const proxyUrl = vscode.workspace.getConfiguration('http').get('proxy') || '';
+        if (proxyUrl) return proxyUrl;
+    } catch {}
+    try {
+        const sp = require('child_process').execSync(
+            'powershell -c "[System.Net.WebRequest]::GetSystemWebProxy().GetProxy(\'https://opencode.ai\').AbsoluteUri"',
+            { timeout: 3000 }
+        ).toString().trim();
+        if (sp && sp !== 'https://opencode.ai/') return sp.replace(/\/$/, '');
+    } catch {}
+    return process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || '';
+}
+
+function toChatInfo(m) {
+    return {
+        id: `opencode/${m.id}`, name: m.name, family: 'opencode',
+        version: m.id, detail: m.detail,
+        maxInputTokens: m.maxInput, maxOutputTokens: m.maxOutput,
+        isUserSelectable: true,
+        capabilities: { toolCalling: true, imageInput: false },
+    };
+}
+
+function buildRequestBody(model, messages, options) {
+    const openaiMessages = [];
+    for (const msg of messages) {
+        const role = mapRole(msg.role);
+        let textContent = '';
+        const toolCalls = [];
+        for (const part of msg.content) {
+            if (part instanceof vscode.LanguageModelTextPart) textContent += part.value;
+            else if (part instanceof vscode.LanguageModelToolCallPart) {
+                toolCalls.push({ id: part.callId, type: 'function', function: { name: part.name, arguments: typeof part.input === 'string' ? part.input : JSON.stringify(part.input) } });
+            } else if (part instanceof vscode.LanguageModelToolResultPart) {
+                let tc = '';
+                for (const item of part.content) { if (item instanceof vscode.LanguageModelTextPart) tc += item.value; }
+                openaiMessages.push({ role: 'tool', content: tc || JSON.stringify(part.content), tool_call_id: part.callId });
+            }
+        }
+        if (role === 'assistant' && toolCalls.length > 0) openaiMessages.push({ role: 'assistant', content: textContent || '', tool_calls: toolCalls });
+        else if (textContent) openaiMessages.push({ role, content: textContent });
+    }
+    // Strip opencode/ prefix from model id
+    const modelId = model.id.startsWith('opencode/') ? model.id.slice(9) : model.id;
+    const body = { model: modelId, messages: openaiMessages, stream: true, stream_options: { include_usage: true } };
+    if (options.tools?.length > 0) {
+        body.tools = options.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+        body.tool_choice = 'auto';
+    }
+    return body;
+}
+
+function mapRole(role) {
+    if (typeof role === 'number') { if (role === 1) return 'user'; if (role === 2) return 'assistant'; if (role === 3) return 'system'; }
+    return 'user';
+}
+
+function estimateTokens(text) {
+    if (typeof text === 'string') return Math.ceil(text.length / 4);
+    if (text?.content && typeof text.content === 'string') return Math.ceil(text.content.length / 4);
+    return 0;
+}
+
+function parseSSEFromNode(readable) {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    return new ReadableStream({
+        start(controller) {
+            readable.on('data', (chunk) => {
+                buffer += decoder.decode(chunk, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith(':')) continue;
+                    if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') { controller.close(); return; }
+                    const dataPrefix = trimmed.startsWith('data: ') ? 'data: ' : 'data:';
+                    if (trimmed.startsWith(dataPrefix)) {
+                        try { controller.enqueue(JSON.parse(trimmed.slice(dataPrefix.length))); } catch {}
+                    }
+                }
+            });
+            readable.on('end', () => controller.close());
+            readable.on('error', (e) => controller.error(e));
+        },
+    });
+}
+
+function zenFetch(apiKey, body, signal) {
+    const proxy = getSystemProxy();
+    const reqBody = JSON.stringify(body);
+    return new Promise((resolve, reject) => {
+        function makeRequest(socket) {
+            if (socket) {
+                const tlsSocket = tls.connect({ socket, host: ZEN_HOST, servername: ZEN_HOST, rejectUnauthorized: false });
+                const headers = [
+                    `POST ${ZEN_PATH} HTTP/1.1`, `Host: ${ZEN_HOST}`, 'Content-Type: application/json',
+                    `Authorization: Bearer ${apiKey}`, 'User-Agent: claude-code/0.1.0',
+                    `Content-Length: ${Buffer.byteLength(reqBody)}`, 'Connection: close', '', '',
+                ].join('\r\n');
+                tlsSocket.write(headers + reqBody);
+                if (signal) signal.addEventListener('abort', () => tlsSocket.destroy());
+                let headerBuf = '';
+                const onData = (chunk) => {
+                    headerBuf += chunk.toString();
+                    const headerEnd = headerBuf.indexOf('\r\n\r\n');
+                    if (headerEnd >= 0) {
+                        const code = parseInt(headerBuf.substring(0, headerBuf.indexOf('\r\n')).split(' ')[1]);
+                        tlsSocket.removeListener('data', onData);
+                        const remaining = headerBuf.substring(headerEnd + 4);
+                        const fakeStream = new (require('stream').PassThrough)();
+                        if (remaining) fakeStream.write(remaining);
+                        tlsSocket.pipe(fakeStream);
+                        resolve({ ok: code >= 200 && code < 300, status: code, body: parseSSEFromNode(fakeStream), text: () => Promise.resolve(headerBuf.substring(headerEnd + 4)) });
+                    }
+                };
+                tlsSocket.on('data', onData);
+                tlsSocket.on('error', reject);
+            } else {
+                const req = https.request({
+                    hostname: ZEN_HOST, path: ZEN_PATH, method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'User-Agent': 'claude-code/0.1.0', 'Content-Length': Buffer.byteLength(reqBody) },
+                    rejectUnauthorized: false,
+                }, (res) => {
+                    resolve({
+                        ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, body: parseSSEFromNode(res),
+                        text: () => new Promise((r, rej) => { let d = ''; res.on('data', c => d += c.toString()); res.on('end', () => r(d)); res.on('error', rej); }),
+                    });
+                });
+                req.on('error', reject); req.write(reqBody); req.end();
+                if (signal) signal.addEventListener('abort', () => req.destroy());
+            }
+        }
+        if (proxy) {
+            const proxyUrl = new URL(proxy);
+            const proxySocket = net.connect({ host: proxyUrl.hostname, port: parseInt(proxyUrl.port) || 8080 });
+            proxySocket.on('connect', () => proxySocket.write(`CONNECT ${ZEN_HOST}:443 HTTP/1.1\r\nHost: ${ZEN_HOST}:443\r\n\r\n`));
+            let connectBuf = '';
+            proxySocket.on('data', (data) => {
+                connectBuf += data.toString();
+                if (connectBuf.includes('\r\n\r\n')) {
+                    if (parseInt(connectBuf.split(' ')[1]) === 200) { proxySocket.removeAllListeners('data'); makeRequest(proxySocket); }
+                    else reject(new Error(`Proxy CONNECT failed: ${connectBuf.split('\r\n')[0]}`));
+                }
+            });
+            proxySocket.on('error', reject);
+            if (signal) signal.addEventListener('abort', () => proxySocket.destroy());
+        } else { makeRequest(null); }
+    });
+}
+
+class OpenCodeChatProvider {
+    onDidChangeLanguageModelChatInformationEmitter = new vscode.EventEmitter();
+    onDidChangeLanguageModelChatInformation = this.onDidChangeLanguageModelChatInformationEmitter.event;
+    constructor(context) {
+        context.subscriptions.push(this.onDidChangeLanguageModelChatInformationEmitter,
+            vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration(CONFIG_SECTION)) this.onDidChangeLanguageModelChatInformationEmitter.fire(); }));
+    }
+    async provideLanguageModelChatInformation() { return MODELS.map(toChatInfo); }
+    async provideLanguageModelChatResponse(model, messages, options, progress, token) {
+        const apiKey = getApiKey();
+        if (!apiKey) throw new Error('OpenCode Zen API key not set. Configure opencode-copilot.apiKey in VS Code settings.');
+        const body = buildRequestBody(model, messages, options);
+        const controller = new AbortController();
+        const cancelListener = token.onCancellationRequested(() => controller.abort());
+        try {
+            if (token.isCancellationRequested) return;
+            const response = await zenFetch(apiKey, body, controller.signal);
+            if (!response.ok) { const errText = await response.text(); throw new Error(`OpenCode Zen error ${response.status}: ${errText}`); }
+            const pendingToolCalls = new Map();
+            const reader = response.body.getReader();
+            while (true) {
+                if (token.isCancellationRequested) return;
+                const { done, value: chunk } = await reader.read();
+                if (done) break;
+                const choices = chunk.choices; if (!choices?.length) continue;
+                const delta = choices[0].delta; const finishReason = choices[0].finish_reason;
+                if (delta) {
+                    if (delta.content) progress.report(new vscode.LanguageModelTextPart(delta.content));
+                    if (delta.reasoning_content) progress.report(new vscode.LanguageModelTextPart(delta.reasoning_content));
+                    if (delta.tool_calls) {
+                        for (const tc of delta.tool_calls) {
+                            let p = pendingToolCalls.get(tc.index);
+                            if (!p) { p = { id: tc.id || '', name: '', arguments: '' }; pendingToolCalls.set(tc.index, p); }
+                            if (tc.id) p.id = tc.id;
+                            if (tc.function) { if (tc.function.name) p.name += tc.function.name; if (tc.function.arguments) p.arguments += tc.function.arguments; }
+                        }
+                    }
+                }
+                if (finishReason === 'tool_calls' || finishReason === 'stop') {
+                    for (const tc of pendingToolCalls.values()) {
+                        try { progress.report(new vscode.LanguageModelToolCallPart(tc.id, tc.name, JSON.parse(tc.arguments || '{}'))); }
+                        catch { progress.report(new vscode.LanguageModelToolCallPart(tc.id, tc.name, {})); }
+                    }
+                    pendingToolCalls.clear();
+                }
+            }
+            for (const tc of pendingToolCalls.values()) {
+                try { progress.report(new vscode.LanguageModelToolCallPart(tc.id, tc.name, JSON.parse(tc.arguments || '{}'))); }
+                catch { progress.report(new vscode.LanguageModelToolCallPart(tc.id, tc.name, {})); }
+            }
+        } finally { cancelListener.dispose(); }
+    }
+    async provideTokenCount(model, text) { return estimateTokens(text); }
+}
+
+function activate(context) {
+    const provider = new OpenCodeChatProvider(context);
+    context.subscriptions.push(vscode.lm.registerLanguageModelChatProvider('opencode', provider));
+    console.log('OpenCode Zen for Copilot activated');
+}
+function deactivate() {}
+module.exports = { activate, deactivate };
