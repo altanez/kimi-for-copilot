@@ -2,8 +2,7 @@
   "name": "kimi-for-copilot",
   "displayName": "Kimi for Copilot Chat",
   "description": "Pick Kimi models from the Copilot Chat model picker via local proxy",
-  "icon": "icon.png",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -11,7 +10,7 @@
   },
   "categories": ["AI", "Chat"],
   "keywords": ["kimi", "moonshot", "copilot", "chat"],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": ["*"],
   "main": "./extension.js",
   "contributes": {
     "languageModelChatProviders": [

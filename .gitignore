@@ -9,3 +9,9 @@ Thumbs.db
 # Python (если остались тестовые файлы)
 __pycache__/
 *.pyc
+
+# Diagnostic artefacts (may contain workspace IDs, proxy info, request ids)
+diag_opencode.log
+diag_full/
+**/diag_opencode.log
+**/diag_full/

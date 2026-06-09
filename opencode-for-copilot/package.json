@@ -2,17 +2,31 @@
   "name": "opencode-for-copilot",
   "displayName": "OpenCode Zen for Copilot Chat",
   "description": "Add OpenCode Zen models to Copilot Chat model picker",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "publisher": "local",
   "license": "MIT",
   "engines": { "vscode": "^1.96.0" },
   "categories": ["AI", "Chat"],
   "keywords": ["opencode", "zen", "copilot", "chat"],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": ["*"],
   "main": "./extension.js",
   "contributes": {
     "languageModelChatProviders": [
       { "vendor": "opencode", "displayName": "OpenCode Zen" }
+    ],
+    "commands": [
+      {
+        "command": "opencode-copilot.openUsageDashboard",
+        "title": "OpenCode Zen: Open Usage Dashboard"
+      },
+      {
+        "command": "opencode-copilot.showUsageStats",
+        "title": "OpenCode Zen: Show Usage Stats"
+      },
+      {
+        "command": "opencode-copilot.resetUsageStats",
+        "title": "OpenCode Zen: Reset Usage Stats"
+      }
     ],
     "configuration": {
       "title": "OpenCode Zen",
@@ -21,6 +35,11 @@
           "type": "string",
           "default": "",
           "description": "OpenCode Zen API key (from opencode.ai/auth)"
+        },
+        "opencode-copilot.workspaceId": {
+          "type": "string",
+          "default": "",
+          "description": "OpenCode workspace ID used to open the authenticated usage dashboard"
         }
       }
     }

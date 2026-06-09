@@ -1,12 +1,15 @@
 # OpenCode Zen for Copilot
 
-Добавляет 40 моделей из подписки OpenCode Zen в выпадающий список GitHub Copilot Chat.
+Добавляет 39 моделей из подписки OpenCode Zen в выпадающий список GitHub Copilot Chat.
 
 ## Быстрая установка
 
 ```powershell
+# Из папки opencode-for-copilot:
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+Скрипт автоматически создаст .vsix-пакет и установит расширение через VS Code. Если `vsce` не найден — выполнит ручную установку копированием файлов. Также запросит API-ключ и проверит подключение.
 
 ## Ручная установка
 
@@ -27,13 +30,13 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 3. Перезагрузи VS Code: `Ctrl+Shift+P` → `Developer: Reload Window`
 
-## Модели (40)
+## Модели (39)
 
 ### Claude (9) — через `/zen/v1/chat/completions`
 `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`, `claude-opus-4-1`, `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-sonnet-4`, `claude-haiku-4-5`
 
-### GPT (17) — через `/zen/v1/responses`
-`gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex-spark`, `gpt-5.3-codex`, `gpt-5.2`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5`, `gpt-5-codex`, `gpt-5-nano`
+### GPT (16) — через `/zen/v1/responses`
+`gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex`, `gpt-5.2`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5`, `gpt-5-codex`, `gpt-5-nano`
 
 ### DeepSeek (2)
 `deepseek-v4-flash`, `deepseek-v4-flash-free` (бесплатно)
@@ -53,12 +56,38 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ### Qwen (2)
 `qwen3.6-plus`, `qwen3.5-plus`
 
-### Бесплатные (2)
+### Бесплатные (3)
 `big-pickle`, `mimo-v2.5-free`, `nemotron-3-super-free`
 
 ## Для пользователей из России
 
 Расширение автоматически идёт через системный прокси (Hiddify, VPN) через HTTP CONNECT туннель.
+
+## Usage и кредиты
+
+В расширение добавлен локальный просмотр usage:
+
+1. `Ctrl+Shift+P` → `OpenCode Zen: Show Usage Stats`
+2. Или клик по статус-бару `OpenCode: ... tok`
+
+Что доступно сейчас:
+
+- суммарные токены по всем запросам
+- input/output/reasoning tokens
+- последний запрос
+- статистика по моделям
+- команда `OpenCode Zen: Open Usage Dashboard` для перехода в кабинет OpenCode по `workspaceId`
+
+Ограничение:
+
+- `remaining credits` сейчас не показывается, потому что в проекте нет подтверждённого публичного endpoint OpenCode Zen для billing/balance
+- если найдётся рабочий endpoint личного кабинета, его можно будет прикрутить в это же расширение отдельной командой или отдельным view
+
+Для открытия dashboard укажи `opencode-copilot.workspaceId`, например из URL вида:
+
+```text
+https://opencode.ai/workspace/wrk_XXXXXXXXXXXXXXXXXXXXXXXXXX/usage
+```
 
 ## Устранение неполадок
 
