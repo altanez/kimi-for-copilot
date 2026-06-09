@@ -94,6 +94,7 @@ function buildRequestBody(model, messages, options) {
     for (const msg of messages) {
         const role = mapRole(msg.role);
         let textContent = '';
+        let reasoningContent = '';
         const toolCalls = [];
 
         for (const part of msg.content) {
@@ -110,13 +111,19 @@ function buildRequestBody(model, messages, options) {
                     if (item instanceof vscode.LanguageModelTextPart) tc += item.value;
                 }
                 openaiMessages.push({ role: 'tool', content: tc || JSON.stringify(part.content), tool_call_id: part.callId });
+            } else if (typeof vscode.LanguageModelThinkingPart === 'function' && part instanceof vscode.LanguageModelThinkingPart) {
+                reasoningContent += Array.isArray(part.value) ? part.value.join('') : part.value;
             }
         }
 
         if (role === 'assistant' && toolCalls.length > 0) {
-            openaiMessages.push({ role: 'assistant', content: textContent || '', tool_calls: toolCalls });
+            const msg = { role: 'assistant', content: textContent || '', tool_calls: toolCalls };
+            if (reasoningContent) msg.reasoning_content = reasoningContent;
+            openaiMessages.push(msg);
         } else if (textContent) {
-            openaiMessages.push({ role, content: textContent });
+            const msg = { role, content: textContent };
+            if (reasoningContent && role === 'assistant') msg.reasoning_content = reasoningContent;
+            openaiMessages.push(msg);
         }
     }
 
